@@ -2,7 +2,15 @@
   <img src="assets/AppIcons/AppIcon.icon/Assets/icon.png" alt="Financials Logo" width="110" height="110" style="border-radius: 24px;" />
   <h1>Financials</h1>
   <p><strong>Smart money, clear vision.</strong></p>
-  <p>A modern, multi-currency personal finance & expense tracker built with Flutter using Clean Architecture & MVVM.</p>
+  <p>A modern, multi-currency personal finance & expense tracker built with Flutter, Clean Architecture (MVVM), and AI Agent Skills.</p>
+
+  <p>
+    <img src="https://img.shields.io/badge/Flutter-3.11+-02569B?style=for-the-badge&logo=flutter&logoColor=white" alt="Flutter" />
+    <img src="https://img.shields.io/badge/Dart-3.0+-0175C2?style=for-the-badge&logo=dart&logoColor=white" alt="Dart" />
+    <img src="https://img.shields.io/badge/Architecture-Clean%20%2B%20MVVM-10B981?style=for-the-badge" alt="Clean Architecture + MVVM" />
+    <img src="https://img.shields.io/badge/Design-UI%2FUX%20Pro%20Max-6366F1?style=for-the-badge" alt="UI/UX Pro Max" />
+    <img src="https://img.shields.io/badge/Workflow-AI%20Agent%20Skills-F59E0B?style=for-the-badge" alt="AI Agent Skills" />
+  </p>
 </div>
 
 ---
@@ -20,9 +28,23 @@
 
 ---
 
-## 🏗️ Architecture
+## 🤖 AI-Augmented Engineering & Agent Skills
 
-This project strictly follows **Clean Architecture** and **MVVM (Model-View-ViewModel)** principles for separation of concerns, testability, and scalability:
+This project was engineered using an **AI-Augmented Agentic Workflow** powered by specialized **Dart**, **Flutter**, and **UI/UX Pro Max** agent skills to enforce architectural boundaries, design system consistency, and automated verification:
+
+| Skill Category | Agent Skill Used | Engineering Impact |
+| :--- | :--- | :--- |
+| **🏛️ Clean Architecture** | `flutter-apply-architecture-best-practices` | Enforced strict separation of concerns across **UI (MVVM)**, **Domain (Use Cases & Entities)**, and **Data (DTOs, Repositories, Services)** layers. |
+| **🎨 Design Intelligence** | `ui-ux-pro-max` | Designed a fintech glassmorphism aesthetic with accessible contrast ratios, system-adaptive Dark/Light palettes (`#080D1A` / `#F8FAFC`), and **IBM Plex Sans** typography. |
+| **🔄 Serialization & Dart 3** | `flutter-implement-json-serialization`<br>`dart-use-pattern-matching` | Implemented type-safe Data Layer DTOs (`TransactionStorageModel`, `CategoryStorageModel`) using Dart 3 switch pattern matching and domain mappers. |
+| **🧪 Testing & Verification** | `dart-add-unit-test`<br>`flutter-add-widget-test` | Built unit and widget tests verifying DTO serialization, `SharedPreferences` persistence, multi-currency analytics, ViewModels, and UI flows. |
+| **🔍 Static Analysis** | `dart-run-static-analysis` | Verified zero lint warnings or errors via `dart analyze` and tree-shake-safe constant icon resolution. |
+
+---
+
+## 🏗️ Clean Architecture Structure
+
+The codebase strictly follows **Clean Architecture** and **MVVM (Model-View-ViewModel)** principles:
 
 ```text
 lib/
@@ -116,7 +138,8 @@ flutter test
 
 - **Framework:** [Flutter](https://flutter.dev/) (Material 3)
 - **Language:** [Dart 3](https://dart.dev/) (Pattern matching, strict typing)
-- **State Management:** `ChangeNotifier` & `ListenableBuilder` (Native Flutter MVVM)
+- **Architecture:** Clean Architecture + MVVM (`ChangeNotifier` & `ListenableBuilder`)
+- **Design System:** `ui-ux-pro-max` Fintech Glassmorphism (System Light & Dark Mode)
 - **Local Storage:** [`shared_preferences`](https://pub.dev/packages/shared_preferences)
 - **Typography:** [`google_fonts`](https://pub.dev/packages/google_fonts) (`IBM Plex Sans`)
 - **Platform Sharing:** [`share_plus`](https://pub.dev/packages/share_plus)
