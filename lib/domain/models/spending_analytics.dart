@@ -14,6 +14,24 @@ class CategorySpending {
   });
 }
 
+class MonthlyAnalytics {
+  final double totalIncome;
+  final double totalExpense;
+  final double netBalance;
+  final double savingsRate;
+  final List<CategorySpending> categoryBreakdown;
+  final CategorySpending? topSpendingCategory;
+
+  const MonthlyAnalytics({
+    required this.totalIncome,
+    required this.totalExpense,
+    required this.netBalance,
+    required this.savingsRate,
+    required this.categoryBreakdown,
+    this.topSpendingCategory,
+  });
+}
+
 class DeletedTransactionSnapshot {
   final TransactionItem item;
   final int originalIndex;
@@ -23,4 +41,3 @@ class DeletedTransactionSnapshot {
     required this.originalIndex,
   });
 }
-

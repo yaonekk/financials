@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:financials/data/models/category_storage_model.dart';
+import 'package:financials/data/models/transaction_storage_model.dart';
 import 'package:financials/data/repositories/transaction_repository_impl.dart';
 import 'package:financials/data/services/transaction_local_service.dart';
 import 'package:financials/domain/models/currency.dart';
 import 'package:financials/domain/models/transaction_item.dart';
+import 'package:financials/domain/use_cases/calculate_monthly_analytics_use_case.dart';
 import 'package:financials/main.dart';
-import 'package:financials/ui/features/settings/settings_screen.dart';
-import 'package:financials/ui/features/splash/splash_screen.dart';
+import 'package:financials/ui/features/settings/views/settings_screen.dart';
+import 'package:financials/ui/features/splash/views/splash_screen.dart';
 import 'package:financials/ui/features/tracker/view_models/expense_tracker_view_model.dart';
 import 'package:financials/ui/features/tracker/views/home_screen.dart';
 import 'package:financials/ui/features/tracker/views/widgets/add_transaction_modal.dart';
@@ -17,20 +20,69 @@ void main() {
 
   late TransactionLocalService localService;
   late TransactionRepositoryImpl repository;
+  late CalculateMonthlyAnalyticsUseCase analyticsUseCase;
   late ExpenseTrackerViewModel viewModel;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     localService = await TransactionLocalService.create();
     repository = TransactionRepositoryImpl(localService: localService);
-    viewModel = ExpenseTrackerViewModel(repository: repository);
+    analyticsUseCase = const CalculateMonthlyAnalyticsUseCase();
+    viewModel = ExpenseTrackerViewModel(
+      repository: repository,
+      calculateAnalyticsUseCase: analyticsUseCase,
+    );
   });
 
-  group('Local Persistence & Fresh Start Tests', () {
+  group('Data Layer (DTOs, Service & Repository) Tests', () {
     test('App starts with fresh state (no dummy data)', () {
       final transactions = repository.getTransactions();
-      expect(transactions, isEmpty, reason: 'Dummy data should be removed for a fresh start');
+      expect(
+        transactions,
+        isEmpty,
+        reason: 'Dummy data should be removed for a fresh start',
+      );
       expect(repository.getCustomCategories(), isEmpty);
+    });
+
+    test('TransactionStorageModel and CategoryStorageModel serialize/deserialize cleanly', () {
+      final item = TransactionItem(
+        id: 'dto-tx-1',
+        title: 'Coffee',
+        amount: 4.5,
+        type: TransactionType.expense,
+        category: TransactionCategory.findById('food'),
+        currency: AppCurrency.fromCode('USD'),
+        date: DateTime(2026, 10, 15),
+        note: 'Morning espresso',
+      );
+
+      final dto = TransactionStorageModel.fromDomain(item);
+      final json = dto.toJson();
+      final parsedDto = TransactionStorageModel.fromJson(json);
+      final restoredItem = parsedDto.toDomain(
+        TransactionCategory.defaultExpenseCategories,
+      );
+
+      expect(restoredItem.id, 'dto-tx-1');
+      expect(restoredItem.title, 'Coffee');
+      expect(restoredItem.amount, 4.5);
+      expect(restoredItem.category?.id, 'food');
+      expect(restoredItem.note, 'Morning espresso');
+
+      final cat = TransactionCategory(
+        id: 'custom-1',
+        name: 'Pets',
+        icon: Icons.pets_rounded,
+        color: const Color(0xFF3B82F6),
+        isCustom: true,
+      );
+      final catDto = CategoryStorageModel.fromDomain(cat);
+      final restoredCat = CategoryStorageModel.fromJson(catDto.toJson()).toDomain();
+      expect(restoredCat.id, 'custom-1');
+      expect(restoredCat.name, 'Pets');
+      expect(restoredCat.icon, Icons.pets_rounded);
+      expect(restoredCat.isCustom, isTrue);
     });
 
     test('Data persists across TransactionLocalService reloads via SharedPreferences', () async {
@@ -45,12 +97,13 @@ void main() {
         note: 'Apartment rent check',
       );
 
-      localService.addTransaction(item);
-      expect(localService.getAllTransactions().length, 1);
+      repository.addTransaction(item);
+      expect(repository.getTransactions().length, 1);
 
-      // Create new service instance with existing mock prefs to simulate app restart
+      // Create new service + repository instance with existing mock prefs to simulate app restart
       final reloadedService = await TransactionLocalService.create();
-      final loadedTransactions = reloadedService.getAllTransactions();
+      final reloadedRepo = TransactionRepositoryImpl(localService: reloadedService);
+      final loadedTransactions = reloadedRepo.getTransactions();
 
       expect(loadedTransactions.length, 1);
       expect(loadedTransactions.first.id, 'persisted-tx-1');
@@ -60,7 +113,7 @@ void main() {
     });
 
     test('Custom categories persist and deleting them falls back safely', () async {
-      final customCat = localService.createCustomCategory(
+      final customCat = repository.addCustomCategory(
         name: 'Gym & Fitness',
         icon: Icons.fitness_center_rounded,
         color: const Color(0xFF10B981),
@@ -69,18 +122,19 @@ void main() {
       expect(customCat.name, 'Gym & Fitness');
       expect(customCat.isCustom, isTrue);
 
-      // Reload service
+      // Reload service + repository
       final reloadedService = await TransactionLocalService.create();
-      expect(reloadedService.getCustomCategories().length, 1);
-      expect(reloadedService.getCustomCategories().first.name, 'Gym & Fitness');
+      final reloadedRepo = TransactionRepositoryImpl(localService: reloadedService);
+      expect(reloadedRepo.getCustomCategories().length, 1);
+      expect(reloadedRepo.getCustomCategories().first.name, 'Gym & Fitness');
 
       // Delete custom category
-      reloadedService.removeCustomCategory(customCat.id);
-      expect(reloadedService.getCustomCategories(), isEmpty);
+      reloadedRepo.deleteCustomCategory(customCat.id);
+      expect(reloadedRepo.getCustomCategories(), isEmpty);
     });
   });
 
-  group('ViewModel & Financial Analytics Tests', () {
+  group('Domain UseCase & ViewModel Financial Analytics Tests', () {
     test('Initial balance and expenses are zero on fresh start', () {
       expect(viewModel.monthlyIncome, 0.0);
       expect(viewModel.monthlyExpense, 0.0);
@@ -89,7 +143,7 @@ void main() {
       expect(viewModel.categorySpendingBreakdown, isEmpty);
     });
 
-    test('Adding income and expenses computes correct net balance & top spend', () {
+    test('Adding income and expenses computes correct net balance & top spend via UseCase', () {
       final now = viewModel.selectedMonth;
 
       final salary = TransactionItem(
@@ -172,12 +226,14 @@ void main() {
     });
   });
 
-  group('UI & Widget Tests', () {
-    testWidgets('SplashScreen renders logo and title properly', (WidgetTester tester) async {
+  group('UI Layer (Views & MVVM Integration) Tests', () {
+    testWidgets('SplashScreen renders logo and title properly', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: SplashScreen(
-            nextScreen: const Scaffold(body: Text('Home Loaded')),
+            nextScreen: Scaffold(body: Text('Home Loaded')),
             durationMs: 500,
           ),
         ),
@@ -195,32 +251,38 @@ void main() {
       expect(find.text('Home Loaded'), findsOneWidget);
     });
 
-    testWidgets('HomeScreen renders fresh empty state with Add Transaction button',
-        (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 2400);
-      tester.view.devicePixelRatio = 2.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    testWidgets(
+      'HomeScreen renders fresh empty state with Add Transaction button',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1080, 2400);
+        tester.view.devicePixelRatio = 2.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData.dark(),
-          home: HomeScreen(viewModel: viewModel),
-        ),
-      );
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData.dark(),
+            home: HomeScreen(viewModel: viewModel),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.text('Financials'), findsOneWidget);
-      expect(find.text('NET MONTHLY BALANCE'), findsOneWidget);
-      expect(find.text('No transactions yet'), findsOneWidget);
-      expect(find.text('Add your first income or expense to get started.'), findsOneWidget);
-      expect(find.text('Add Transaction'), findsOneWidget);
-    });
+        expect(find.text('Financials'), findsOneWidget);
+        expect(find.text('NET MONTHLY BALANCE'), findsOneWidget);
+        expect(find.text('No transactions yet'), findsOneWidget);
+        expect(
+          find.text('Add your first income or expense to get started.'),
+          findsOneWidget,
+        );
+        expect(find.text('Add Transaction'), findsOneWidget);
+      },
+    );
 
-    testWidgets('AddTransactionModal opens and allows entering expense',
-        (WidgetTester tester) async {
+    testWidgets('AddTransactionModal opens and allows entering expense', (
+      WidgetTester tester,
+    ) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.0;
       addTearDown(() {
@@ -247,7 +309,10 @@ void main() {
 
       // Enter amount and title
       await tester.enterText(find.byType(TextFormField).first, '120.00');
-      await tester.enterText(find.byType(TextFormField).at(1), 'Grocery shopping');
+      await tester.enterText(
+        find.byType(TextFormField).at(1),
+        'Grocery shopping',
+      );
       await tester.pumpAndSettle();
 
       // Submit
@@ -261,58 +326,65 @@ void main() {
       expect(find.text('Grocery shopping'), findsOneWidget);
     });
 
-    testWidgets('SettingsScreen displays app info and all sharing platform chips',
-        (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 2400);
-      tester.view.devicePixelRatio = 2.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    testWidgets(
+      'SettingsScreen displays app info and all sharing platform chips',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1080, 2400);
+        tester.view.devicePixelRatio = 2.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: SettingsScreen(),
-        ),
-      );
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: SettingsScreen(),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      // Check App Info
-      expect(find.text('Settings'), findsOneWidget);
-      expect(find.text('Financials'), findsOneWidget);
-      expect(find.text('1.0.0'), findsOneWidget);
-      expect(find.text('BrightLab'), findsOneWidget);
+        // Check App Info
+        expect(find.text('Settings'), findsOneWidget);
+        expect(find.text('Financials'), findsOneWidget);
+        expect(find.text('1.0.0'), findsOneWidget);
+        expect(find.text('BrightLab'), findsOneWidget);
 
-      // Check Share Section and platforms
-      expect(find.text('Share Financials with friends & family'), findsOneWidget);
-      expect(find.text('WhatsApp'), findsOneWidget);
-      expect(find.text('Facebook'), findsOneWidget);
-      expect(find.text('Twitter/X'), findsOneWidget);
-      expect(find.text('Instagram'), findsOneWidget);
-      expect(find.text('Telegram'), findsOneWidget);
-      expect(find.text('Email'), findsOneWidget);
-      expect(find.text('SMS'), findsOneWidget);
-      expect(find.text('More...'), findsOneWidget);
-      expect(find.text('Share Financials'), findsOneWidget);
-    });
+        // Check Share Section and platforms
+        expect(
+          find.text('Share Financials with friends & family'),
+          findsOneWidget,
+        );
+        expect(find.text('WhatsApp'), findsOneWidget);
+        expect(find.text('Facebook'), findsOneWidget);
+        expect(find.text('Twitter/X'), findsOneWidget);
+        expect(find.text('Instagram'), findsOneWidget);
+        expect(find.text('Telegram'), findsOneWidget);
+        expect(find.text('Email'), findsOneWidget);
+        expect(find.text('SMS'), findsOneWidget);
+        expect(find.text('More...'), findsOneWidget);
+        expect(find.text('Share Financials'), findsOneWidget);
+      },
+    );
 
-    testWidgets('FinancialsApp root widget integrates ThemeMode.system and Splash',
-        (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 2400);
-      tester.view.devicePixelRatio = 2.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    testWidgets(
+      'FinancialsApp root widget integrates ThemeMode.system and Splash',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1080, 2400);
+        tester.view.devicePixelRatio = 2.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      await tester.pumpWidget(FinancialsApp(viewModel: viewModel));
-      // First renders splash screen
-      expect(find.byType(SplashScreen), findsOneWidget);
+        await tester.pumpWidget(FinancialsApp(viewModel: viewModel));
+        // First renders splash screen
+        expect(find.byType(SplashScreen), findsOneWidget);
 
-      // Pump past splash duration to settle all timers
-      await tester.pump(const Duration(milliseconds: 2500));
-      await tester.pumpAndSettle();
-      expect(find.byType(HomeScreen), findsOneWidget);
-    });
+        // Pump past splash duration to settle all timers
+        await tester.pump(const Duration(milliseconds: 2500));
+        await tester.pumpAndSettle();
+        expect(find.byType(HomeScreen), findsOneWidget);
+      },
+    );
   });
 }

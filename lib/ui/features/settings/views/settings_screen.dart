@@ -1,31 +1,32 @@
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../core/theme/app_theme.dart';
+import '../../../core/theme/app_theme.dart';
+import '../view_models/settings_view_model.dart';
 
-/// Settings screen with app sharing, about section, and theme info.
+/// Settings view displaying app metadata, storage status, and multi-platform sharing.
+/// Follows MVVM by delegating business/platform actions to [SettingsViewModel].
 class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+  final SettingsViewModel viewModel;
 
-  static const String _appStoreLink =
-      'https://apps.apple.com/app/financials';
-  static const String _playStoreLink =
-      'https://play.google.com/store/apps/details?id=com.brightlab.financials';
-
-  static const String _shareMessage =
-      '💰 Check out Financials — a smart personal finance tracker!\n\n'
-      'Track income & expenses, analyze spending, and take control of your money.\n\n'
-      '📱 iOS: $_appStoreLink\n'
-      '🤖 Android: $_playStoreLink';
+  const SettingsScreen({
+    super.key,
+    this.viewModel = const SettingsViewModel(),
+  });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? AppColors.bgDark : AppColors.bgLight;
     final cardColor = isDark ? AppColors.cardDark : AppColors.cardLight;
-    final cardBorder = isDark ? AppColors.cardBorderDark : AppColors.cardBorderLight;
-    final textPrimary = isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
-    final textSecondary = isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
+    final cardBorder = isDark
+        ? AppColors.cardBorderDark
+        : AppColors.cardBorderLight;
+    final textPrimary = isDark
+        ? AppColors.textPrimaryDark
+        : AppColors.textPrimaryLight;
+    final textSecondary = isDark
+        ? AppColors.textSecondaryDark
+        : AppColors.textSecondaryLight;
     final textMuted = isDark ? AppColors.textMutedDark : AppColors.textMutedLight;
 
     return Scaffold(
@@ -40,7 +41,11 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: textPrimary),
+          icon: Icon(
+            Icons.arrow_back_ios_new_rounded,
+            size: 20,
+            color: textPrimary,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -60,7 +65,7 @@ class SettingsScreen extends StatelessWidget {
                     icon: Icons.info_outline_rounded,
                     iconColor: AppColors.primaryLight,
                     label: 'App Name',
-                    value: 'Financials',
+                    value: SettingsViewModel.appName,
                     textPrimary: textPrimary,
                     textSecondary: textSecondary,
                   ),
@@ -69,7 +74,7 @@ class SettingsScreen extends StatelessWidget {
                     icon: Icons.tag_rounded,
                     iconColor: AppColors.primaryLight,
                     label: 'Version',
-                    value: '1.0.0',
+                    value: SettingsViewModel.appVersion,
                     textPrimary: textPrimary,
                     textSecondary: textSecondary,
                   ),
@@ -78,7 +83,7 @@ class SettingsScreen extends StatelessWidget {
                     icon: Icons.business_rounded,
                     iconColor: AppColors.primaryLight,
                     label: 'Developer',
-                    value: 'BrightLab',
+                    value: SettingsViewModel.developerName,
                     textPrimary: textPrimary,
                     textSecondary: textSecondary,
                   ),
@@ -230,7 +235,7 @@ class SettingsScreen extends StatelessWidget {
                 icon: Icons.save_outlined,
                 iconColor: AppColors.income,
                 label: 'Storage',
-                value: 'Saved locally on your device',
+                value: SettingsViewModel.storageDescription,
                 textPrimary: textPrimary,
                 textSecondary: textSecondary,
               ),
@@ -258,12 +263,10 @@ class SettingsScreen extends StatelessWidget {
 
   void _shareApp(BuildContext context) {
     final box = context.findRenderObject() as RenderBox?;
-    final origin = box != null ? (box.localToGlobal(Offset.zero) & box.size) : null;
-    Share.share(
-      _shareMessage,
-      subject: 'Financials App',
-      sharePositionOrigin: origin,
-    );
+    final origin = box != null
+        ? (box.localToGlobal(Offset.zero) & box.size)
+        : null;
+    viewModel.shareApp(sharePositionOrigin: origin);
   }
 
   Widget _buildSectionLabel(String label, Color color) {
@@ -353,9 +356,7 @@ class SettingsScreen extends StatelessWidget {
     required VoidCallback onTap,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final chipBg = isDark
-        ? AppColors.surfaceDark
-        : AppColors.bgLight;
+    final chipBg = isDark ? AppColors.surfaceDark : AppColors.bgLight;
     final chipBorder = isDark
         ? AppColors.cardBorderDark
         : AppColors.cardBorderLight;
@@ -380,7 +381,9 @@ class SettingsScreen extends StatelessWidget {
               style: GoogleFonts.ibmPlexSans(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
               ),
             ),
           ],
@@ -389,3 +392,4 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 }
+

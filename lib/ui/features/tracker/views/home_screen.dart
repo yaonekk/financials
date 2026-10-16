@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:financials/domain/models/transaction_item.dart';
 import 'package:financials/ui/core/theme/app_theme.dart';
-import 'package:financials/ui/features/settings/settings_screen.dart';
+import 'package:financials/ui/features/settings/views/settings_screen.dart';
 import 'package:financials/ui/features/statistics/views/statistics_screen.dart';
 import 'package:financials/ui/features/tracker/view_models/expense_tracker_view_model.dart';
 import 'package:financials/ui/features/tracker/views/widgets/add_transaction_modal.dart';

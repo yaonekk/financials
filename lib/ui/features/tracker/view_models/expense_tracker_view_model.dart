@@ -4,14 +4,23 @@ import '../../../../domain/models/currency.dart';
 import '../../../../domain/models/spending_analytics.dart';
 import '../../../../domain/models/transaction_item.dart';
 import '../../../../domain/repositories/transaction_repository.dart';
+import '../../../../domain/use_cases/calculate_monthly_analytics_use_case.dart';
 
 enum FilterType { all, expenses, income }
 
+/// ViewModel managing state and user interactions for the tracker and statistics views.
+/// Delegates data persistence to [TransactionRepository] and complex domain
+/// calculations to [CalculateMonthlyAnalyticsUseCase].
 class ExpenseTrackerViewModel extends ChangeNotifier {
   final TransactionRepository repository;
+  final CalculateMonthlyAnalyticsUseCase calculateAnalyticsUseCase;
 
   // Selected view month
-  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  DateTime _selectedMonth = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    1,
+  );
 
   // Primary display currency for totals & statistics
   AppCurrency _primaryCurrency = AppCurrency.supportedCurrencies.first;
@@ -23,7 +32,10 @@ class ExpenseTrackerViewModel extends ChangeNotifier {
   // Undo delete mechanism
   DeletedTransactionSnapshot? _lastDeleted;
 
-  ExpenseTrackerViewModel({required this.repository});
+  ExpenseTrackerViewModel({
+    required this.repository,
+    this.calculateAnalyticsUseCase = const CalculateMonthlyAnalyticsUseCase(),
+  });
 
   // Getters
   DateTime get selectedMonth => _selectedMonth;
@@ -32,7 +44,8 @@ class ExpenseTrackerViewModel extends ChangeNotifier {
   String? get selectedCategoryId => _selectedCategoryId;
   bool get hasUndoAvailable => _lastDeleted != null;
 
-  List<TransactionCategory> get customCategories => repository.getCustomCategories();
+  List<TransactionCategory> get customCategories =>
+      repository.getCustomCategories();
 
   List<TransactionCategory> get expenseCategories => [
     ...TransactionCategory.defaultExpenseCategories,
@@ -94,97 +107,58 @@ class ExpenseTrackerViewModel extends ChangeNotifier {
   /// All transactions occurring within the currently selected month
   List<TransactionItem> get currentMonthTransactions {
     return repository.getTransactions().where((t) {
-      return t.date.year == _selectedMonth.year && t.date.month == _selectedMonth.month;
+      return t.date.year == _selectedMonth.year &&
+          t.date.month == _selectedMonth.month;
     }).toList();
   }
 
   /// Transactions filtered by month, filterType, and selected category
   List<TransactionItem> get filteredTransactions {
     return currentMonthTransactions.where((t) {
-      if (_filterType == FilterType.expenses && t.type != TransactionType.expense) {
+      if (_filterType == FilterType.expenses &&
+          t.type != TransactionType.expense) {
         return false;
       }
-      if (_filterType == FilterType.income && t.type != TransactionType.income) {
+      if (_filterType == FilterType.income &&
+          t.type != TransactionType.income) {
         return false;
       }
       if (_selectedCategoryId != null) {
-        if (t.type == TransactionType.income || t.category?.id != _selectedCategoryId) {
+        if (t.type == TransactionType.income ||
+            t.category?.id != _selectedCategoryId) {
           return false;
         }
       }
       return true;
-    }).toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
+    }).toList()..sort((a, b) => b.date.compareTo(a.date));
   }
+
+  /// Computed monthly analytics via the Domain Use Case
+  MonthlyAnalytics get currentMonthAnalytics =>
+      calculateAnalyticsUseCase.execute(
+        monthTransactions: currentMonthTransactions,
+        primaryCurrency: _primaryCurrency,
+      );
 
   /// Total Monthly Income in primary currency
-  double get monthlyIncome {
-    final incomes = currentMonthTransactions.where((t) => t.type == TransactionType.income);
-    double totalUsd = 0.0;
-    for (final t in incomes) {
-      totalUsd += t.amountInUsd;
-    }
-    return totalUsd / _primaryCurrency.rateToUsd;
-  }
+  double get monthlyIncome => currentMonthAnalytics.totalIncome;
 
   /// Total Monthly Expense in primary currency
-  double get monthlyExpense {
-    final expenses = currentMonthTransactions.where((t) => t.type == TransactionType.expense);
-    double totalUsd = 0.0;
-    for (final t in expenses) {
-      totalUsd += t.amountInUsd;
-    }
-    return totalUsd / _primaryCurrency.rateToUsd;
-  }
+  double get monthlyExpense => currentMonthAnalytics.totalExpense;
 
   /// Net balance for the month (Income - Expense)
-  double get monthlyNetBalance => monthlyIncome - monthlyExpense;
+  double get monthlyNetBalance => currentMonthAnalytics.netBalance;
 
   /// Savings rate as a percentage
-  double get monthlySavingsRate {
-    if (monthlyIncome <= 0) return 0.0;
-    final rate = (monthlyNetBalance / monthlyIncome) * 100;
-    return rate.clamp(-100.0, 100.0);
-  }
+  double get monthlySavingsRate => currentMonthAnalytics.savingsRate;
 
   /// Categorized breakdown of expenses for the selected month
-  List<CategorySpending> get categorySpendingBreakdown {
-    final expenses = currentMonthTransactions.where((t) => t.type == TransactionType.expense);
-    if (expenses.isEmpty) return [];
+  List<CategorySpending> get categorySpendingBreakdown =>
+      currentMonthAnalytics.categoryBreakdown;
 
-    final Map<String, List<TransactionItem>> grouped = {};
-    for (final exp in expenses) {
-      final catId = exp.category?.id ?? 'other_expense';
-      grouped.putIfAbsent(catId, () => []).add(exp);
-    }
-
-    final totalExpUsd = expenses.fold<double>(0.0, (sum, t) => sum + t.amountInUsd);
-
-    final List<CategorySpending> result = [];
-    grouped.forEach((catId, items) {
-      final category = items.first.category ?? TransactionCategory.defaultExpenseCategories.last;
-      final catUsd = items.fold<double>(0.0, (sum, t) => sum + t.amountInUsd);
-      final catConverted = catUsd / _primaryCurrency.rateToUsd;
-      final percentage = totalExpUsd > 0 ? (catUsd / totalExpUsd) * 100 : 0.0;
-
-      result.add(CategorySpending(
-        category: category,
-        totalAmount: catConverted,
-        percentage: percentage,
-        count: items.length,
-      ));
-    });
-
-    result.sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
-    return result;
-  }
-
-  /// Top spending category this month (answers: "what did he spend the most money on this month?")
-  CategorySpending? get topSpendingCategory {
-    final breakdown = categorySpendingBreakdown;
-    if (breakdown.isEmpty) return null;
-    return breakdown.first;
-  }
+  /// Top spending category this month
+  CategorySpending? get topSpendingCategory =>
+      currentMonthAnalytics.topSpendingCategory;
 
   // ================= CRUD Operations =================
 
@@ -215,7 +189,10 @@ class ExpenseTrackerViewModel extends ChangeNotifier {
     if (_lastDeleted == null) return false;
 
     final item = _lastDeleted!.item;
-    final targetIndex = min(_lastDeleted!.originalIndex, repository.getTransactions().length);
+    final targetIndex = min(
+      _lastDeleted!.originalIndex,
+      repository.getTransactions().length,
+    );
     repository.insertTransactionAt(targetIndex, item);
     _lastDeleted = null;
     notifyListeners();

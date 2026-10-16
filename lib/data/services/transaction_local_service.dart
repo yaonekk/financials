@@ -1,18 +1,18 @@
 import 'dart:convert';
-import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../domain/models/currency.dart';
-import '../../domain/models/transaction_item.dart';
+import '../models/category_storage_model.dart';
+import '../models/transaction_storage_model.dart';
 
-/// Persists transactions and custom categories to device storage via SharedPreferences.
-/// No seed data — starts fresh on first launch.
+/// Data layer service wrapping local device storage ([SharedPreferences]).
+/// Operates exclusively on Data Layer DTOs ([TransactionStorageModel] and
+/// [CategoryStorageModel]). Starts with an empty state on first launch.
 class TransactionLocalService {
   static const String _transactionsKey = 'transactions_v1';
   static const String _customCategoriesKey = 'custom_categories_v1';
 
   final SharedPreferences _prefs;
-  final List<TransactionItem> _transactions = [];
-  final List<TransactionCategory> _customCategories = [];
+  final List<TransactionStorageModel> _transactions = [];
+  final List<CategoryStorageModel> _customCategories = [];
 
   TransactionLocalService._(this._prefs) {
     _loadFromStorage();
@@ -26,31 +26,31 @@ class TransactionLocalService {
 
   // ─── Read ────────────────────────────────────────────────────────────────
 
-  List<TransactionItem> getAllTransactions() {
+  List<TransactionStorageModel> getAllTransactionRecords() {
     return List.unmodifiable(_transactions);
   }
 
-  List<TransactionCategory> getCustomCategories() {
+  List<CategoryStorageModel> getCustomCategoryRecords() {
     return List.unmodifiable(_customCategories);
   }
 
   // ─── Write ───────────────────────────────────────────────────────────────
 
-  void addTransaction(TransactionItem transaction) {
-    _transactions.insert(0, transaction);
+  void addTransactionRecord(TransactionStorageModel record) {
+    _transactions.insert(0, record);
     _saveTransactions();
   }
 
-  void insertTransaction(int index, TransactionItem transaction) {
+  void insertTransactionRecord(int index, TransactionStorageModel record) {
     if (index >= 0 && index <= _transactions.length) {
-      _transactions.insert(index, transaction);
+      _transactions.insert(index, record);
     } else {
-      _transactions.add(transaction);
+      _transactions.add(record);
     }
     _saveTransactions();
   }
 
-  TransactionItem? removeTransaction(String id) {
+  TransactionStorageModel? removeTransactionRecord(String id) {
     final index = _transactions.indexWhere((t) => t.id == id);
     if (index == -1) return null;
     final removed = _transactions.removeAt(index);
@@ -58,30 +58,28 @@ class TransactionLocalService {
     return removed;
   }
 
-  TransactionCategory createCustomCategory({
-    required String name,
-    required IconData icon,
-    required Color color,
-  }) {
-    final newCategory = TransactionCategory(
-      id: 'custom-${DateTime.now().millisecondsSinceEpoch}',
-      name: name,
-      icon: icon,
-      color: color,
-      isCustom: true,
-    );
-    _customCategories.add(newCategory);
+  void addCustomCategoryRecord(CategoryStorageModel record) {
+    _customCategories.add(record);
     _saveCustomCategories();
-    return newCategory;
   }
 
-  void removeCustomCategory(String categoryId) {
+  void removeCustomCategoryRecord(
+    String categoryId, {
+    required String fallbackCategoryId,
+  }) {
     _customCategories.removeWhere((c) => c.id == categoryId);
-    // Reassign transactions using this category to fallback
     for (int i = 0; i < _transactions.length; i++) {
-      if (_transactions[i].category?.id == categoryId) {
-        _transactions[i] = _transactions[i].copyWith(
-          category: TransactionCategory.defaultExpenseCategories.last,
+      final current = _transactions[i];
+      if (current.categoryId == categoryId) {
+        _transactions[i] = TransactionStorageModel(
+          id: current.id,
+          title: current.title,
+          amount: current.amount,
+          type: current.type,
+          categoryId: fallbackCategoryId,
+          currencyCode: current.currencyCode,
+          dateMs: current.dateMs,
+          note: current.note,
         );
       }
     }
@@ -102,8 +100,9 @@ class TransactionLocalService {
     try {
       final List<dynamic> list = jsonDecode(raw) as List<dynamic>;
       for (final item in list) {
-        final map = item as Map<String, dynamic>;
-        _customCategories.add(_categoryFromMap(map));
+        if (item is Map<String, dynamic>) {
+          _customCategories.add(CategoryStorageModel.fromJson(item));
+        }
       }
     } catch (_) {
       // Corrupt data — start fresh
@@ -115,13 +114,10 @@ class TransactionLocalService {
     if (raw == null) return;
     try {
       final List<dynamic> list = jsonDecode(raw) as List<dynamic>;
-      final allCategories = [
-        ...TransactionCategory.defaultExpenseCategories,
-        ..._customCategories,
-      ];
       for (final item in list) {
-        final map = item as Map<String, dynamic>;
-        _transactions.add(_transactionFromMap(map, allCategories));
+        if (item is Map<String, dynamic>) {
+          _transactions.add(TransactionStorageModel.fromJson(item));
+        }
       }
     } catch (_) {
       // Corrupt data — start fresh
@@ -129,93 +125,12 @@ class TransactionLocalService {
   }
 
   void _saveTransactions() {
-    final list = _transactions.map(_transactionToMap).toList();
+    final list = _transactions.map((t) => t.toJson()).toList();
     _prefs.setString(_transactionsKey, jsonEncode(list));
   }
 
   void _saveCustomCategories() {
-    final list = _customCategories.map(_categoryToMap).toList();
+    final list = _customCategories.map((c) => c.toJson()).toList();
     _prefs.setString(_customCategoriesKey, jsonEncode(list));
-  }
-
-  // ─── Map Helpers ─────────────────────────────────────────────────────────
-
-  Map<String, dynamic> _transactionToMap(TransactionItem t) {
-    return {
-      'id': t.id,
-      'title': t.title,
-      'amount': t.amount,
-      'type': t.type.name,
-      'categoryId': t.category?.id,
-      'currencyCode': t.currency.code,
-      'dateMs': t.date.millisecondsSinceEpoch,
-      'note': t.note,
-    };
-  }
-
-  TransactionItem _transactionFromMap(
-      Map<String, dynamic> map, List<TransactionCategory> categories) {
-    final categoryId = map['categoryId'] as String?;
-    final TransactionCategory? category = categoryId != null
-        ? categories.firstWhere(
-            (c) => c.id == categoryId,
-            orElse: () => TransactionCategory.defaultExpenseCategories.last,
-          )
-        : null;
-
-    return TransactionItem(
-      id: map['id'] as String,
-      title: map['title'] as String,
-      amount: (map['amount'] as num).toDouble(),
-      type: TransactionType.values.firstWhere(
-        (t) => t.name == map['type'],
-        orElse: () => TransactionType.expense,
-      ),
-      category: category,
-      currency: AppCurrency.fromCode(map['currencyCode'] as String),
-      date: DateTime.fromMillisecondsSinceEpoch(map['dateMs'] as int),
-      note: map['note'] as String?,
-    );
-  }
-
-  Map<String, dynamic> _categoryToMap(TransactionCategory c) {
-    return {
-      'id': c.id,
-      'name': c.name,
-      'iconCodePoint': c.icon.codePoint,
-      'iconFontFamily': c.icon.fontFamily,
-      'colorValue': c.color.toARGB32(),
-    };
-  }
-
-  static const List<IconData> _supportedCustomIcons = [
-    Icons.label_rounded,
-    Icons.local_cafe_rounded,
-    Icons.sports_esports_rounded,
-    Icons.school_rounded,
-    Icons.pets_rounded,
-    Icons.fitness_center_rounded,
-    Icons.directions_bike_rounded,
-    Icons.laptop_mac_rounded,
-    Icons.music_note_rounded,
-    Icons.local_gas_station_rounded,
-    Icons.category_rounded,
-  ];
-
-  static IconData _resolveIcon(int codePoint) {
-    for (final icon in _supportedCustomIcons) {
-      if (icon.codePoint == codePoint) return icon;
-    }
-    return Icons.category_rounded;
-  }
-
-  TransactionCategory _categoryFromMap(Map<String, dynamic> map) {
-    return TransactionCategory(
-      id: map['id'] as String,
-      name: map['name'] as String,
-      icon: _resolveIcon(map['iconCodePoint'] as int? ?? 0),
-      color: Color(map['colorValue'] as int),
-      isCustom: true,
-    );
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../core/theme/app_theme.dart';
+import '../../../core/theme/app_theme.dart';
 
 /// Animated splash screen that displays the app logo and brand name,
 /// then navigates to the provided [nextScreen] after [durationMs].
@@ -68,8 +68,12 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? AppColors.bgDark : AppColors.bgLight;
-    final textColor = isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
-    final subtitleColor = isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
+    final textColor = isDark
+        ? AppColors.textPrimaryDark
+        : AppColors.textPrimaryLight;
+    final subtitleColor = isDark
+        ? AppColors.textSecondaryDark
+        : AppColors.textSecondaryLight;
 
     return Scaffold(
       backgroundColor: bgColor,
@@ -110,7 +114,10 @@ class _SplashScreenState extends State<SplashScreen>
                           height: 120,
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
-                              colors: [AppColors.primary, AppColors.primaryLight],
+                              colors: [
+                                AppColors.primary,
+                                AppColors.primaryLight,
+                              ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
